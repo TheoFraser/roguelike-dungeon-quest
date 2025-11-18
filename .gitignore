@@ -1,0 +1,36 @@
+# Compiled object files
+*.o
+*.obj
+
+# Compiled executable
+roguelike
+
+# Save files
+roguelike_save.dat
+*.dat
+
+# Editor backup files
+*~
+*.swp
+*.swo
+.*.swp
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Core dumps
+core
+core.*
