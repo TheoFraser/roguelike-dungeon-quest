@@ -63,7 +63,7 @@ void create_guaranteed_dungeon(Game *game) {
         if (x + width >= MAP_WIDTH - 1) x = MAP_WIDTH - width - 2;
         if (y + height >= MAP_HEIGHT - 1) y = MAP_HEIGHT - height - 2;
         
-        Room new_room = {x, y, width, height, false, ROOM_NORMAL};
+        Room new_room = {x, y, width, height, false, ROOM_NORMAL, BIOME_DUNGEON};
         new_room.room_type = choose_room_type(i, rooms_to_create);
         
         if (new_room.room_type == ROOM_BOSS) {
@@ -139,7 +139,7 @@ void generate_dungeon(Game *game) {
             int x = 2 + rand() % (MAP_WIDTH - width - 4);
             int y = 2 + rand() % (MAP_HEIGHT - height - 4);
             
-            Room new_room = {x, y, width, height, false, ROOM_NORMAL};
+            Room new_room = {x, y, width, height, false, ROOM_NORMAL, BIOME_DUNGEON};
             new_room.room_type = choose_room_type(rooms_placed, MAX_ROOMS);
             
             if (new_room.room_type == ROOM_BOSS) {
@@ -195,7 +195,7 @@ void generate_dungeon(Game *game) {
     // VERIFY: Ensure we have rooms
     if (game->room_count == 0) {
         // Ultimate fallback - create single large room
-        Room emergency_room = {MAP_WIDTH / 2 - 10, MAP_HEIGHT / 2 - 5, 20, 10, false, ROOM_NORMAL};
+        Room emergency_room = {MAP_WIDTH / 2 - 10, MAP_HEIGHT / 2 - 5, 20, 10, false, ROOM_NORMAL, BIOME_DUNGEON};
         create_room(game, emergency_room);
         game->rooms[0] = emergency_room;
         game->room_count = 1;

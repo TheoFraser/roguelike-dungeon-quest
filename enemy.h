@@ -10,5 +10,10 @@ void move_goblin(Game *game, Enemy *enemy);
 void move_orc(Game *game, Enemy *enemy);
 void move_bat(Game *game, Enemy *enemy);
 void move_boss(Game *game, Enemy *enemy);
+void move_archer(Game *game, Enemy *enemy);
+void move_summoner(Game *game, Enemy *enemy);
+void move_healer(Game *game, Enemy *enemy);
+void move_teleporter(Game *game, Enemy *enemy);
+void move_tank(Game *game, Enemy *enemy);
 
 #endif

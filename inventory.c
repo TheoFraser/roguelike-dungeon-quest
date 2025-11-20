@@ -62,7 +62,8 @@ void equip_from_inventory(Game *game, int index) {
     if (!item->exists) return;
     
     if (item->type == ITEM_WEAPON) {
-        equip_weapon(game, item->weapon_type, item->value, item->name);
+        equip_weapon(game, item->weapon_type, item->value, item->name,
+                    item->weapon_effect, item->weapon_effect_chance);
         item->exists = false;
         for (int i = index; i < game->player.inventory_count - 1; i++) {
             game->player.inventory[i] = game->player.inventory[i + 1];

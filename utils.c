@@ -32,7 +32,12 @@ void set_message(Game *game, const char *msg) {
 bool is_walkable(Game *game, int x, int y) {
     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
     char tile = game->map[y][x];
-    return tile == TILE_FLOOR || tile == TILE_STAIRS;
+    return tile == TILE_FLOOR || 
+           tile == TILE_STAIRS || 
+           tile == TILE_LAVA || 
+           tile == TILE_SPIKE_TRAP || 
+           tile == TILE_POISON_GAS ||
+           tile == TILE_PRESSURE_PLATE;
 }
 
 Enemy* get_enemy_at(Game *game, int x, int y) {

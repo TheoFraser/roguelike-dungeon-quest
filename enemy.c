@@ -4,6 +4,26 @@
 #include "status.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+
+// Helper function for enemy attacks with dodge check
+void enemy_attack_player(Game *game, Enemy *enemy) {
+    // DODGE CHECK
+    bool dodged = (rand() % 100) < game->player.dodge_chance;
+    char msg[100];
+    
+    if (dodged) {
+        sprintf(msg, "You dodged %s's attack!", enemy->name);
+        set_message(game, msg);
+    } else {
+        int damage = enemy->damage - get_damage_reduction(&game->player);
+        if (damage < 0) damage = 0;
+        game->player.hp -= damage;
+        
+        sprintf(msg, "%s hits you for %d damage!", enemy->name, damage);
+        set_message(game, msg);
+    }
+}
 
 void create_enemy(Enemy *enemy, EnemyType type, int x, int y, int level) {
     enemy->pos.x = x;
@@ -12,8 +32,22 @@ void create_enemy(Enemy *enemy, EnemyType type, int x, int y, int level) {
     enemy->type = type;
     enemy->move_counter = 0;
     enemy->status_effect_count = 0;
+    enemy->is_elite = false;
+    strcpy(enemy->elite_title, "");
     
     float scale = 1.0 + (level - 1) * 0.3;
+    
+    // ELITE ENEMY CHANCE (7% chance, not for bosses)
+    if (type != ENEMY_BOSS && rand() % 100 < 7) {
+        enemy->is_elite = true;
+        
+        // Choose random elite title
+        const char *titles[] = {"Swift", "Venomous", "Iron", "Savage", "Ancient"};
+        strcpy(enemy->elite_title, titles[rand() % 5]);
+        
+        // Elite bonuses
+        scale *= 2.0;  // 2x stats!
+    }
     
     switch (type) {
         case ENEMY_GOBLIN:
@@ -59,6 +93,72 @@ void create_enemy(Enemy *enemy, EnemyType type, int x, int y, int level) {
             enemy->xp_value = 100 + (level * 30);
             enemy->color_pair = 5;
             break;
+            
+        case ENEMY_ARCHER:
+            strcpy(enemy->name, "Archer");
+            enemy->symbol = 'A';
+            enemy->hp = (int)(20 * scale);
+            enemy->max_hp = enemy->hp;
+            enemy->damage = (int)(12 * scale);
+            enemy->gold_drop = 8 + rand() % 12 + (level * 3);
+            enemy->xp_value = 15 + (level * 5);
+            enemy->color_pair = 6;  // White
+            break;
+            
+        case ENEMY_SUMMONER:
+            strcpy(enemy->name, "Summoner");
+            enemy->symbol = 'S';
+            enemy->hp = (int)(25 * scale);
+            enemy->max_hp = enemy->hp;
+            enemy->damage = (int)(8 * scale);
+            enemy->gold_drop = 12 + rand() % 15 + (level * 4);
+            enemy->xp_value = 20 + (level * 6);
+            enemy->color_pair = 5;  // Magenta
+            break;
+            
+        case ENEMY_HEALER:
+            strcpy(enemy->name, "Healer");
+            enemy->symbol = 'H';
+            enemy->hp = (int)(18 * scale);
+            enemy->max_hp = enemy->hp;
+            enemy->damage = (int)(5 * scale);
+            enemy->gold_drop = 10 + rand() % 10 + (level * 3);
+            enemy->xp_value = 18 + (level * 5);
+            enemy->color_pair = 3;  // Green
+            break;
+            
+        case ENEMY_TELEPORTER:
+            strcpy(enemy->name, "Blinker");
+            enemy->symbol = 'T';
+            enemy->hp = (int)(15 * scale);
+            enemy->max_hp = enemy->hp;
+            enemy->damage = (int)(10 * scale);
+            enemy->gold_drop = 8 + rand() % 15 + (level * 3);
+            enemy->xp_value = 16 + (level * 5);
+            enemy->color_pair = 7;  // Cyan
+            break;
+            
+        case ENEMY_TANK:
+            strcpy(enemy->name, "Tank");
+            enemy->symbol = 'K';
+            enemy->hp = (int)(60 * scale);
+            enemy->max_hp = enemy->hp;
+            enemy->damage = (int)(18 * scale);
+            enemy->gold_drop = 15 + rand() % 20 + (level * 5);
+            enemy->xp_value = 30 + (level * 8);
+            enemy->color_pair = 2;  // Red
+            break;
+    }
+    
+    // Add elite title to name and boost loot
+    if (enemy->is_elite) {
+        char full_name[50];
+        snprintf(full_name, sizeof(full_name), "%s %s", enemy->elite_title, enemy->name);
+        strcpy(enemy->name, full_name);
+        
+        // Elite enemies drop MUCH better loot
+        enemy->gold_drop = (int)(enemy->gold_drop * 2.5);
+        enemy->xp_value = (int)(enemy->xp_value * 2.0);
     }
 }
 
@@ -80,8 +180,8 @@ void spawn_enemies(Game *game) {
             continue;
         }
         
-        // Safe rooms have no enemies!
-        if (room.room_type == ROOM_SAFE) {
+        // Safe rooms and shop rooms have no enemies!
+        if (room.room_type == ROOM_SAFE || room.room_type == ROOM_SHOP) {
             continue;
         }
         
@@ -107,17 +207,51 @@ void spawn_enemies(Game *game) {
             int type_roll = rand() % 100;
             EnemyType type;
             
-            // Monster dens have more dangerous enemies
+            // Special enemies start appearing on floor 2+
+            bool can_spawn_special = game->dungeon_level >= 2;
+            int special_chance = game->dungeon_level * 5;  // 5% per floor
+            if (special_chance > 40) special_chance = 40;  // Cap at 40%
+            
+            // Monster dens have more dangerous enemies + more special types
             if (room.room_type == ROOM_MONSTER_DEN) {
-                if (type_roll < 30) {
+                if (can_spawn_special && type_roll < special_chance) {
+                    // Spawn special enemy
+                    int special_roll = rand() % 100;
+                    if (special_roll < 20) {
+                        type = ENEMY_ARCHER;
+                    } else if (special_roll < 35) {
+                        type = ENEMY_SUMMONER;
+                    } else if (special_roll < 50) {
+                        type = ENEMY_HEALER;
+                    } else if (special_roll < 70) {
+                        type = ENEMY_TELEPORTER;
+                    } else {
+                        type = ENEMY_TANK;
+                    }
+                } else if (type_roll < 30 + special_chance) {
                     type = ENEMY_GOBLIN;
-                } else if (type_roll < 60) {
+                } else if (type_roll < 60 + special_chance) {
                     type = ENEMY_BAT;
                 } else {
                     type = ENEMY_ORC;
                 }
             } else {
-                if (type_roll < 50) {
+                // Normal rooms
+                if (can_spawn_special && type_roll < special_chance / 2) {
+                    // Lower chance for special enemies in normal rooms
+                    int special_roll = rand() % 100;
+                    if (special_roll < 25) {
+                        type = ENEMY_ARCHER;
+                    } else if (special_roll < 45) {
+                        type = ENEMY_SUMMONER;
+                    } else if (special_roll < 60) {
+                        type = ENEMY_HEALER;
+                    } else if (special_roll < 80) {
+                        type = ENEMY_TELEPORTER;
+                    } else {
+                        type = ENEMY_TANK;
+                    }
+                } else if (type_roll < 50) {
                     type = ENEMY_GOBLIN;
                 } else if (type_roll < 75) {
                     type = ENEMY_BAT;
@@ -145,9 +279,7 @@ void move_goblin(Game *game, Enemy *enemy) {
         int new_y = enemy->pos.y + dy;
         
         if (new_x == game->player.pos.x && new_y == game->player.pos.y) {
-            int damage = enemy->damage - get_damage_reduction(&game->player);
-            if (damage < 0) damage = 0;
-            game->player.hp -= damage;
+            enemy_attack_player(game, enemy);
             return;
         }
         
@@ -172,9 +304,7 @@ void move_orc(Game *game, Enemy *enemy) {
         int new_y = enemy->pos.y + dy;
         
         if (new_x == game->player.pos.x && new_y == game->player.pos.y) {
-            int damage = enemy->damage - get_damage_reduction(&game->player);
-            if (damage < 0) damage = 0;
-            game->player.hp -= damage;
+            enemy_attack_player(game, enemy);
             return;
         }
         
@@ -200,9 +330,7 @@ void move_bat(Game *game, Enemy *enemy) {
     int new_y = enemy->pos.y + dy;
     
     if (new_x == game->player.pos.x && new_y == game->player.pos.y) {
-        int damage = enemy->damage - get_damage_reduction(&game->player);
-        if (damage < 0) damage = 0;
-        game->player.hp -= damage;
+        enemy_attack_player(game, enemy);
         
         // Bats have 30% chance to poison
         if (rand() % 100 < 30) {
@@ -231,9 +359,7 @@ void move_boss(Game *game, Enemy *enemy) {
         int new_y = enemy->pos.y + dy;
         
         if (new_x == game->player.pos.x && new_y == game->player.pos.y) {
-            int damage = enemy->damage - get_damage_reduction(&game->player);
-            if (damage < 0) damage = 0;
-            game->player.hp -= damage;
+            enemy_attack_player(game, enemy);
             return;
         }
         
@@ -270,6 +396,195 @@ void move_enemies(Game *game) {
             case ENEMY_ORC: move_orc(game, enemy); break;
             case ENEMY_BAT: move_bat(game, enemy); break;
             case ENEMY_BOSS: move_boss(game, enemy); break;
+            case ENEMY_ARCHER: move_archer(game, enemy); break;
+            case ENEMY_SUMMONER: move_summoner(game, enemy); break;
+            case ENEMY_HEALER: move_healer(game, enemy); break;
+            case ENEMY_TELEPORTER: move_teleporter(game, enemy); break;
+            case ENEMY_TANK: move_tank(game, enemy); break;
         }
+    }
+}
+
+// ARCHER: Ranged attacker - keeps distance and shoots
+void move_archer(Game *game, Enemy *enemy) {
+    float dist = distance(game->player.pos.x, game->player.pos.y, 
+                         enemy->pos.x, enemy->pos.y);
+    
+    // If player is in range (3-6 tiles), shoot!
+    if (dist >= 3.0 && dist <= 6.0) {
+        enemy->move_counter++;
+        if (enemy->move_counter % 2 == 0) {  // Shoot every other turn
+            enemy_attack_player(game, enemy);
+        }
+        return;
+    }
+    
+    // If too close, back away
+    if (dist < 3.0) {
+        int dx = 0, dy = 0;
+        if (game->player.pos.x > enemy->pos.x) dx = -1;
+        else if (game->player.pos.x < enemy->pos.x) dx = 1;
+        
+        if (game->player.pos.y > enemy->pos.y) dy = -1;
+        else if (game->player.pos.y < enemy->pos.y) dy = 1;
+        
+        int new_x = enemy->pos.x + dx;
+        int new_y = enemy->pos.y + dy;
+        
+        if (is_walkable(game, new_x, new_y) && get_enemy_at(game, new_x, new_y) == NULL) {
+            enemy->pos.x = new_x;
+            enemy->pos.y = new_y;
+        }
+    }
+    // If too far, move closer
+    else if (dist > 6.0) {
+        move_goblin(game, enemy);  // Use normal movement
+    }
+}
+
+// SUMMONER: Spawns minions when damaged
+void move_summoner(Game *game, Enemy *enemy) {
+    // Check if below 50% HP and hasn't summoned yet
+    if (enemy->hp < enemy->max_hp / 2 && enemy->move_counter == 0) {
+        enemy->move_counter = 1;  // Flag that we've summoned
+        
+        // Try to spawn 2 goblins nearby
+        int spawned = 0;
+        for (int attempts = 0; attempts < 10 && spawned < 2 && game->enemy_count < MAX_ENEMIES; attempts++) {
+            int dx = (rand() % 3) - 1;  // -1, 0, or 1
+            int dy = (rand() % 3) - 1;
+            int spawn_x = enemy->pos.x + dx;
+            int spawn_y = enemy->pos.y + dy;
+            
+            if (is_walkable(game, spawn_x, spawn_y) && 
+                get_enemy_at(game, spawn_x, spawn_y) == NULL &&
+                (spawn_x != game->player.pos.x || spawn_y != game->player.pos.y)) {
+                
+                Enemy *minion = &game->enemies[game->enemy_count];
+                create_enemy(minion, ENEMY_GOBLIN, spawn_x, spawn_y, game->dungeon_level);
+                game->enemy_count++;
+                spawned++;
+            }
+        }
+        
+        if (spawned > 0) {
+            set_message(game, "Summoner calls for reinforcements!");
+        }
+    }
+    
+    // Move like an orc (slow but steady)
+    move_orc(game, enemy);
+}
+
+// HEALER: Heals nearby damaged enemies
+void move_healer(Game *game, Enemy *enemy) {
+    enemy->move_counter++;
+    
+    // Try to heal every 3 turns
+    if (enemy->move_counter % 3 == 0) {
+        // Find a damaged enemy within 4 tiles
+        Enemy *target = NULL;
+        float best_need = 0;
+        
+        for (int i = 0; i < game->enemy_count; i++) {
+            Enemy *other = &game->enemies[i];
+            if (!other->alive || other == enemy) continue;
+            if (other->hp >= other->max_hp) continue;
+            
+            float dist = distance(enemy->pos.x, enemy->pos.y, other->pos.x, other->pos.y);
+            if (dist <= 4.0) {
+                float need = (float)(other->max_hp - other->hp) / other->max_hp;
+                if (need > best_need) {
+                    best_need = need;
+                    target = other;
+                }
+            }
+        }
+        
+        if (target != NULL) {
+            int heal_amount = enemy->damage * 2;  // Heals for 2x its damage
+            target->hp += heal_amount;
+            if (target->hp > target->max_hp) target->hp = target->max_hp;
+            
+            char msg[100];
+            sprintf(msg, "Healer restores %d HP to %s!", heal_amount, target->name);
+            set_message(game, msg);
+            return;
+        }
+    }
+    
+    // Move slowly toward player
+    if (enemy->move_counter % 2 == 0) {
+        move_goblin(game, enemy);
+    }
+}
+
+// TELEPORTER: Blinks around randomly, hard to pin down
+void move_teleporter(Game *game, Enemy *enemy) {
+    enemy->move_counter++;
+    
+    // Teleport every 4 turns
+    if (enemy->move_counter % 4 == 0) {
+        // Try to teleport within 5 tiles of player
+        for (int attempt = 0; attempt < 20; attempt++) {
+            int new_x = game->player.pos.x + (rand() % 11) - 5;  // -5 to +5
+            int new_y = game->player.pos.y + (rand() % 11) - 5;
+            
+            if (is_walkable(game, new_x, new_y) && 
+                get_enemy_at(game, new_x, new_y) == NULL &&
+                (new_x != game->player.pos.x || new_y != game->player.pos.y)) {
+                
+                enemy->pos.x = new_x;
+                enemy->pos.y = new_y;
+                set_message(game, "Blinker teleports!");
+                return;
+            }
+        }
+    }
+    
+    // Attack if adjacent
+    int dx = 0, dy = 0;
+    if (game->player.pos.x > enemy->pos.x) dx = 1;
+    else if (game->player.pos.x < enemy->pos.x) dx = -1;
+    
+    if (game->player.pos.y > enemy->pos.y) dy = 1;
+    else if (game->player.pos.y < enemy->pos.y) dy = -1;
+    
+    int new_x = enemy->pos.x + dx;
+    int new_y = enemy->pos.y + dy;
+    
+    if (new_x == game->player.pos.x && new_y == game->player.pos.y) {
+        enemy_attack_player(game, enemy);
+    }
+}
+
+// TANK: Slow but incredibly tough and hits hard
+void move_tank(Game *game, Enemy *enemy) {
+    enemy->move_counter++;
+    
+    // Moves very slowly (every 3 turns)
+    if (enemy->move_counter % 3 != 0) {
+        return;
+    }
+    
+    // Move toward player
+    int dx = 0, dy = 0;
+    if (game->player.pos.x > enemy->pos.x) dx = 1;
+    else if (game->player.pos.x < enemy->pos.x) dx = -1;
+    
+    if (game->player.pos.y > enemy->pos.y) dy = 1;
+    else if (game->player.pos.y < enemy->pos.y) dy = -1;
+    
+    int new_x = enemy->pos.x + dx;
+    int new_y = enemy->pos.y + dy;
+    
+    if (new_x == game->player.pos.x && new_y == game->player.pos.y) {
+        enemy_attack_player(game, enemy);
+        return;
+    }
+    
+    if (is_walkable(game, new_x, new_y) && get_enemy_at(game, new_x, new_y) == NULL) {
+        enemy->pos.x = new_x;
+        enemy->pos.y = new_y;
     }
 }

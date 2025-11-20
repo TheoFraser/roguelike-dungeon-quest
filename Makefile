@@ -1,8 +1,8 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g
+CFLAGS = -Wall -Wextra -g -Wno-format-truncation
 LDFLAGS = -lncurses -lm
 
-SOURCES = main.c game.c player.c enemy.c item.c dungeon.c ability.c inventory.c render.c fov.c save.c utils.c status.c
+SOURCES = main.c game.c player.c enemy.c item.c dungeon.c ability.c inventory.c render.c fov.c save.c utils.c status.c shop.c dungeon_features.c random_events.c ranged.c
 OBJECTS = $(SOURCES:.c=.o)
 TARGET = roguelike
 

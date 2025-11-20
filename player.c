@@ -5,6 +5,10 @@
 #include "item.h"
 #include "inventory.h"
 #include "fov.h"
+#include "dungeon_features.h"
+#include "status.h"
+#include "random_events.h"
+#include "ranged.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +22,9 @@ int get_damage_reduction(Player *player) {
 }
 
 void gain_xp(Game *game, int xp) {
+    // Apply XP bonus if event is active
+    modify_xp_gain(game, &xp);
+    
     game->player.xp += xp;
     
     if (game->player.xp >= game->player.xp_to_next_level) {
@@ -46,12 +53,19 @@ void level_up(Game *game) {
     set_message(game, msg);
 }
 
-void equip_weapon(Game *game, WeaponType weapon, int damage, const char *name) {
+void equip_weapon(Game *game, WeaponType weapon, int damage, const char *name, WeaponEffect effect, int effect_chance) {
     char msg[100];
     game->player.equipment.weapon = weapon;
     game->player.equipment.weapon_damage = damage;
+    game->player.equipment.weapon_effect = effect;
+    game->player.equipment.weapon_effect_chance = effect_chance;
     strcpy(game->player.equipment.weapon_name, name);
-    sprintf(msg, "Equipped %s! (+%d damage)", name, damage);
+    
+    if (effect != WEAPON_EFFECT_NONE) {
+        sprintf(msg, "Equipped %s! (+%d damage, %d%% special effect)", name, damage, effect_chance);
+    } else {
+        sprintf(msg, "Equipped %s! (+%d damage)", name, damage);
+    }
     set_message(game, msg);
 }
 
@@ -67,18 +81,83 @@ void equip_armor(Game *game, ArmorType armor, int defense, const char *name) {
 void attack_enemy(Game *game, Enemy *enemy) {
     char msg[100];
     int total_damage = get_total_damage(&game->player);
+    
+    // CRITICAL HIT CHECK
+    bool is_crit = (rand() % 100) < game->player.crit_chance;
+    if (is_crit) {
+        total_damage *= 2;  // Double damage!
+    }
+    
     enemy->hp -= total_damage;
+    
+    // WEAPON EFFECT PROC CHECK
+    WeaponEffect effect = game->player.equipment.weapon_effect;
+    int effect_chance = game->player.equipment.weapon_effect_chance;
+    bool effect_proc = false;
+    
+    if (effect != WEAPON_EFFECT_NONE && (rand() % 100) < effect_chance) {
+        effect_proc = true;
+        
+        switch (effect) {
+            case WEAPON_EFFECT_FIRE:
+                apply_status_to_enemy(game, enemy, STATUS_BURN, 3, 3);
+                break;
+            case WEAPON_EFFECT_POISON:
+                apply_status_to_enemy(game, enemy, STATUS_POISON, 4, 2);
+                break;
+            case WEAPON_EFFECT_FROST:
+                apply_status_to_enemy(game, enemy, STATUS_SLOW, 3, 50);
+                break;
+            case WEAPON_EFFECT_VAMPIRIC:
+                {
+                    int heal = total_damage / 10;  // Steal 10% of damage
+                    if (heal < 1) heal = 1;
+                    game->player.hp += heal;
+                    if (game->player.hp > game->player.max_hp) {
+                        game->player.hp = game->player.max_hp;
+                    }
+                }
+                break;
+            case WEAPON_EFFECT_STUNNING:
+                apply_status_to_enemy(game, enemy, STATUS_STUN, 1, 0);
+                break;
+            default:
+                break;
+        }
+    }
     
     if (enemy->hp <= 0) {
         enemy->alive = false;
         game->player.gold += enemy->gold_drop;
         gain_xp(game, enemy->xp_value);
-        sprintf(msg, "Defeated %s! (+%d gold, +%d XP)", 
-                enemy->name, enemy->gold_drop, enemy->xp_value);
+        if (is_crit && effect_proc) {
+            sprintf(msg, "CRITICAL HIT + EFFECT! Defeated %s! (+%d gold, +%d XP)", 
+                    enemy->name, enemy->gold_drop, enemy->xp_value);
+        } else if (is_crit) {
+            sprintf(msg, "CRITICAL HIT! Defeated %s! (+%d gold, +%d XP)", 
+                    enemy->name, enemy->gold_drop, enemy->xp_value);
+        } else if (effect_proc) {
+            sprintf(msg, "SPECIAL EFFECT! Defeated %s! (+%d gold, +%d XP)", 
+                    enemy->name, enemy->gold_drop, enemy->xp_value);
+        } else {
+            sprintf(msg, "Defeated %s! (+%d gold, +%d XP)", 
+                    enemy->name, enemy->gold_drop, enemy->xp_value);
+        }
         set_message(game, msg);
     } else {
-        sprintf(msg, "Hit %s for %d! HP: %d/%d", 
-                enemy->name, total_damage, enemy->hp, enemy->max_hp);
+        if (is_crit && effect_proc) {
+            sprintf(msg, "CRIT + EFFECT! %d damage to %s! HP: %d/%d", 
+                    total_damage, enemy->name, enemy->hp, enemy->max_hp);
+        } else if (is_crit) {
+            sprintf(msg, "CRITICAL HIT! %d damage to %s! HP: %d/%d", 
+                    total_damage, enemy->name, enemy->hp, enemy->max_hp);
+        } else if (effect_proc) {
+            sprintf(msg, "SPECIAL EFFECT! %d damage to %s! HP: %d/%d", 
+                    total_damage, enemy->name, enemy->hp, enemy->max_hp);
+        } else {
+            sprintf(msg, "Hit %s for %d! HP: %d/%d", 
+                    enemy->name, total_damage, enemy->hp, enemy->max_hp);
+        }
         set_message(game, msg);
     }
 }
@@ -91,6 +170,8 @@ void pickup_item(Game *game, Item *item) {
         inv_item.type = ITEM_WEAPON;
         inv_item.weapon_type = item->weapon_type;
         inv_item.value = item->bonus;
+        inv_item.weapon_effect = item->weapon_effect;
+        inv_item.weapon_effect_chance = item->weapon_effect_chance;
         strcpy(inv_item.name, item->name);
         inv_item.exists = true;
         add_to_inventory(game, inv_item);
@@ -131,6 +212,11 @@ void pickup_item(Game *game, Item *item) {
     } else if (item->type == ITEM_GOLD) {
         game->player.gold += item->value;
         sprintf(msg, "Collected %d gold!", item->value);
+        set_message(game, msg);
+        item->collected = true;
+    } else if (item->type == ITEM_ARROWS) {
+        game->player.arrows += item->value;
+        sprintf(msg, "Picked up %d arrows! Total: %d", item->value, game->player.arrows);
         set_message(game, msg);
         item->collected = true;
     }
@@ -193,6 +279,11 @@ void descend_stairs(Game *game) {
     game->room_count = 0;
     game->enemy_count = 0;
     game->item_count = 0;
+    game->object_count = 0;
+    game->hazard_count = 0;
+    
+    // Choose biome for new floor
+    game->current_biome = choose_biome(game->dungeon_level);
     
     // FIXED: Generate dungeon (this sets new player position)
     generate_dungeon(game);
@@ -205,6 +296,8 @@ void descend_stairs(Game *game) {
     
     spawn_enemies(game);
     spawn_items(game);
+    spawn_interactive_objects(game);
+    spawn_hazards(game);
     spawn_stairs(game);
     
     // Restore player stats (position is already set by generate_dungeon)
@@ -225,4 +318,10 @@ void descend_stairs(Game *game) {
     
     // CRITICAL: Recalculate FOV for new floor!
     calculate_fov(game);
+    
+    // Clear previous floor's event effects
+    clear_floor_events(game);
+    
+    // Trigger random event for this floor
+    trigger_random_event(game);
 }

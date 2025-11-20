@@ -1,6 +1,6 @@
-#include "types.h"      // MUST be first - defines StatusEffect types
-#include "status.h"     // Then our header
-#include "utils.h"      // Then other headers
+#include "types.h"
+#include "status.h"
+#include "utils.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -31,7 +31,7 @@ void apply_status_to_player(Game *game, StatusEffectType type, int duration, int
     }
 }
 
-void apply_status_to_enemy(Game *game, Enemy *enemy, StatusEffectType type, int duration, int power) {
+void apply_status_to_enemy(Game *game __attribute__((unused)), Enemy *enemy, StatusEffectType type, int duration, int power) {
     // Check if already has this effect
     for (int i = 0; i < enemy->status_effect_count; i++) {
         if (enemy->status_effects[i].type == type) {
@@ -113,7 +113,7 @@ void update_player_status_effects(Game *game) {
     }
 }
 
-void update_enemy_status_effects(Game *game, Enemy *enemy) {
+void update_enemy_status_effects(Game *game __attribute__((unused)), Enemy *enemy) {
     for (int i = 0; i < enemy->status_effect_count; i++) {
         StatusEffect *effect = &enemy->status_effects[i];
         
@@ -162,9 +162,6 @@ void update_enemy_status_effects(Game *game, Enemy *enemy) {
             i--; // Check this slot again since we shifted
         }
     }
-    
-    // Suppress unused parameter warning
-    (void)game;
 }
 
 bool has_status_effect(StatusEffect *effects, int count, StatusEffectType type) {

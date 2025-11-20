@@ -3,6 +3,7 @@
 #include "player.h"
 #include "fov.h"
 #include "status.h"
+#include "dungeon_features.h"
 #include <ncurses.h>
 
 void draw_abilities(Game *game) {
@@ -10,23 +11,23 @@ void draw_abilities(Game *game) {
     
     mvprintw(0, 0, "=== ABILITIES (Press 'c' to close, ESC to cancel) ===");
     mvprintw(1, 0, "Mana: %d/%d", game->player.mana, game->player.max_mana);
-    mvprintw(2, 0, "");
+    mvprintw(2, 0, " ");
     
     mvprintw(4, 0, "[F] Fireball - 25 mana");
     mvprintw(5, 0, "    AOE damage (30 dmg) to all enemies within 3 tiles");
-    mvprintw(6, 0, "");
+    mvprintw(6, 0, " ");
     
     mvprintw(7, 0, "[H] Heal - 20 mana");
     mvprintw(8, 0, "    Restore 50 HP");
-    mvprintw(9, 0, "");
+    mvprintw(9, 0, " ");
     
     mvprintw(10, 0, "[T] Teleport - 30 mana");
     mvprintw(11, 0, "    Escape to random location in current room");
-    mvprintw(12, 0, "");
+    mvprintw(12, 0, " ");
     
     mvprintw(13, 0, "[Shift + Arrow] Dash - 15 mana");
     mvprintw(14, 0, "    Quick movement 5 tiles in direction");
-    mvprintw(15, 0, "");
+    mvprintw(15, 0, " ");
     
     mvprintw(17, 0, "Tip: Collect mana potions (M) to restore mana!");
     mvprintw(18, 0, "Tip: Mana regenerates slowly each turn (+1 per turn)");
@@ -39,13 +40,13 @@ void draw_inventory(Game *game) {
     
     mvprintw(0, 0, "=== INVENTORY (Press 'i' to close, ESC to cancel) ===");
     mvprintw(1, 0, "Items: %d/%d", game->player.inventory_count, MAX_INVENTORY);
-    mvprintw(2, 0, "");
+    mvprintw(2, 0, " ");
     
     if (game->player.inventory_count == 0) {
         mvprintw(4, 0, "Your inventory is empty!");
     } else {
         mvprintw(4, 0, "Press number to USE/EQUIP, 'd' + number to DROP:");
-        mvprintw(5, 0, "");
+        mvprintw(5, 0, " ");
         
         for (int i = 0; i < game->player.inventory_count; i++) {
             InventoryItem *item = &game->player.inventory[i];
@@ -264,7 +265,67 @@ void draw_game(Game *game) {
                         attron(COLOR_PAIR(9) | A_BOLD);
                         mvaddch(y, x, '[');
                         attroff(COLOR_PAIR(9) | A_BOLD);
+                    } else if (item->type == ITEM_ARROWS) {
+                        attron(COLOR_PAIR(8) | A_BOLD);
+                        mvaddch(y, x, '^');
+                        attroff(COLOR_PAIR(8) | A_BOLD);
                     }
+                    continue;
+                }
+                
+                // Draw projectiles (arrows) - only if visible
+                bool has_projectile = false;
+                for (int i = 0; i < game->projectile_count; i++) {
+                    Projectile *proj = &game->projectiles[i];
+                    if (proj->active && proj->pos.x == x && proj->pos.y == y) {
+                        attron(COLOR_PAIR(proj->color_pair) | A_BOLD);
+                        mvaddch(y, x, proj->symbol);
+                        attroff(COLOR_PAIR(proj->color_pair) | A_BOLD);
+                        has_projectile = true;
+                        break;
+                    }
+                }
+                if (has_projectile) continue;
+                
+                // Draw interactive objects (only if visible)
+                InteractiveObject *obj = get_object_at(game, x, y);
+                if (obj != NULL) {
+                    int color = COLOR_PAIR(4);  // Default yellow
+                    char symbol = '?';
+                    
+                    switch (obj->type) {
+                        case OBJ_CHEST:
+                        case OBJ_MIMIC:
+                            symbol = obj->opened ? 'c' : 'C';
+                            color = COLOR_PAIR(4);
+                            break;
+                        case OBJ_LEVER:
+                            symbol = 'L';
+                            color = obj->activated ? COLOR_PAIR(3) : COLOR_PAIR(6);
+                            break;
+                        case OBJ_PRESSURE_PLATE:
+                            symbol = '_';
+                            color = COLOR_PAIR(8);
+                            break;
+                        case OBJ_SHRINE:
+                            symbol = 'A';
+                            color = obj->activated ? COLOR_PAIR(7) : COLOR_PAIR(5);
+                            break;
+                        case OBJ_SECRET_DOOR:
+                            symbol = '+';
+                            color = COLOR_PAIR(7);
+                            break;
+                        case OBJ_MERCHANT:
+                            symbol = 'M';
+                            color = COLOR_PAIR(4) | A_BOLD;  // Gold/yellow, bold
+                            break;
+                        default:
+                            break;
+                    }
+                    
+                    attron(color | A_BOLD);
+                    mvaddch(y, x, symbol);
+                    attroff(color | A_BOLD);
                     continue;
                 }
             }
@@ -273,9 +334,16 @@ void draw_game(Game *game) {
             if (visible) {
                 Enemy *enemy = get_enemy_at(game, x, y);
                 if (enemy != NULL) {
-                    attron(COLOR_PAIR(enemy->color_pair) | A_BOLD);
-                    mvaddch(y, x, enemy->symbol);
-                    attroff(COLOR_PAIR(enemy->color_pair) | A_BOLD);
+                    // ELITE enemies get special gold rendering!
+                    if (enemy->is_elite) {
+                        attron(COLOR_PAIR(4) | A_BOLD | A_REVERSE);  // Gold + reversed = standout!
+                        mvaddch(y, x, enemy->symbol);
+                        attroff(COLOR_PAIR(4) | A_BOLD | A_REVERSE);
+                    } else {
+                        attron(COLOR_PAIR(enemy->color_pair) | A_BOLD);
+                        mvaddch(y, x, enemy->symbol);
+                        attroff(COLOR_PAIR(enemy->color_pair) | A_BOLD);
+                    }
                     
                     // Draw status effects above enemy if has any
                     if (enemy->status_effect_count > 0 && y > 0) {
@@ -306,9 +374,26 @@ void draw_game(Game *game) {
                 }
             }
             
-            // Draw map tiles (dimmed if not visible)
+            // Draw map tiles (dimmed if not visible, colored for hazards)
             if (visible) {
-                mvaddch(y, x, game->map[y][x]);
+                char tile = game->map[y][x];
+                
+                // Color code hazards
+                if (tile == TILE_LAVA) {
+                    attron(COLOR_PAIR(2) | A_BOLD);  // Red
+                    mvaddch(y, x, tile);
+                    attroff(COLOR_PAIR(2) | A_BOLD);
+                } else if (tile == TILE_SPIKE_TRAP) {
+                    attron(COLOR_PAIR(4) | A_BOLD);  // Yellow
+                    mvaddch(y, x, tile);
+                    attroff(COLOR_PAIR(4) | A_BOLD);
+                } else if (tile == TILE_POISON_GAS) {
+                    attron(COLOR_PAIR(3) | A_BOLD);  // Green
+                    mvaddch(y, x, tile);
+                    attroff(COLOR_PAIR(3) | A_BOLD);
+                } else {
+                    mvaddch(y, x, tile);
+                }
             } else {
                 attron(A_DIM);
                 mvaddch(y, x, game->map[y][x]);
@@ -343,9 +428,21 @@ void draw_game(Game *game) {
              game->player.level, game->player.xp, game->player.xp_to_next_level,
              game->player.gold, total_dmg, defense, game->dungeon_level);
     
-    mvprintw(status_y + 2, 0, "Weapon: %s | Armor: %s | Inv:%d/%d(i) | Abilities(c) | Save(F5) Load(F9)", 
-             game->player.equipment.weapon_name, game->player.equipment.armor_name,
-             game->player.inventory_count, MAX_INVENTORY);
+    // Show biome
+    const char *biome_name = "Dungeon";
+    switch (game->current_biome) {
+        case BIOME_CRYPT: biome_name = "Crypt"; break;
+        case BIOME_FOREST: biome_name = "Forest"; break;
+        case BIOME_LAVA_CAVES: biome_name = "Lava Caves"; break;
+        case BIOME_ICE_CAVERN: biome_name = "Ice Cavern"; break;
+        default: biome_name = "Dungeon"; break;
+    }
+    
+    mvprintw(status_y + 2, 0, "Weapon: %s | Armor: %s | Arrows: %d | Biome: %s", 
+             game->player.equipment.weapon_name, game->player.equipment.armor_name, 
+             game->player.arrows, biome_name);
+    
+    mvprintw(status_y + 3, 0, "Inv(i) | Abilities(c) | Fire(f) | Interact(e) | Save(F5) | Quit(q)");
     
     // Draw message log on the right side
     draw_message_log(game, 0, MAP_WIDTH + 2);
